@@ -66,11 +66,122 @@ public class LocusCreateCancelOrder
 			LOGGER.error(LocusConstants.ERROR_MESSAGE + e);
 		}
 
+		String order_status = orderHive.getData().getOrder_status();
+		if (order_status.equalsIgnoreCase("confirm") || order_status.equalsIgnoreCase("not_confirm")
+				|| order_status.equalsIgnoreCase("Not Confirm") || order_status.equalsIgnoreCase("confirmed")
+				|| order_status.equalsIgnoreCase("NotConfirmed") || order_status.equalsIgnoreCase("Not Confirmed")) {
+			System.out.println("Inside if : " + order_status);
+
+			// need to create
+			conversionStartTime = System.currentTimeMillis();
+			// CreateOrderImpl createOrderImpl = new CreateOrderImpl();
+			try {
+				locusRequestBuildResponse = orderhiveLocusConvertorServiceImplObj
+						.buildLocusCreateOrderRequest(orderHive);
+			} catch (Exception e) {
+				LOGGER.error("Failed in conversion: " + e);
+			}
+			conversionEndTime = System.currentTimeMillis();
+			System.out.println(
+					"Total Time in JSON Conversion : " + (conversionStartTime - conversionEndTime) + " millisecond");
+
+			LOGGER.info("locusRequestBuildResponse===>" + locusRequestBuildResponse);
+			if (null != locusRequestBuildResponse) {
+				ResponseEntity<String> locusResponse = getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse);
+				LOGGER.info("Got the response in main method");
+
+				if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
+
+					if (order_status.equalsIgnoreCase("cancel")) {
+						finalInvokeCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj, response,
+								order_status);
+						}
+
+					LOGGER.info("locusResponse.getStatusCode().value()" + locusResponse.getStatusCode().value() + "\t"
+							+ (HttpStatus.OK.value()));
+					response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.SUCCESS);
+				} else {
+					boolean successFlag = false;
+					for (int count = 2; count < LocusConstants.ORDER_CREATE_COUNT; count++) {
+
+						locusResponse = getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse);
+						if (locusResponse.getStatusCode().equals(HttpStatus.OK))
+							successFlag = true;
+
+						LOGGER.info("Success Flag::" + successFlag);
+
+						if (successFlag == true) {
+							
+							if (order_status.equalsIgnoreCase("cancel")) {
+							finalInvokeCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj, response,
+									order_status);
+							}
+
+							response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.SUCCESS);
+							break;
+						} else {
+							if (count == LocusConstants.COUNT_FINAL) {
+								LOGGER.info("Going to build Final Response after hitting three times:");
+								response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.FAILURE);
+								break;
+							}
+						}
+
+					}
+				}
+			} else {
+				response.setStatusCode(HttpStatus.CONFLICT.value());
+				response.setBody(LocusConstants.ERROR_IN_PROCESSING);
+			}
+		} else {
+			response.setStatusCode(HttpStatus.CONFLICT.value());
+			response.setBody("Invalid Order Status");
+		}
+		System.out.println("Final Response  :" + response);
+		return response;
+	}
+
+	/**
+	 * @param orderHive
+	 * @param orderhiveLocusConvertorServiceImplObj
+	 * @param response
+	 * @param order_status
+	 */
+	private void finalInvokeCancelOrder(OrderHive orderHive,
+			OrderhiveLocusConvertorServiceImpl orderhiveLocusConvertorServiceImplObj,
+			APIGatewayProxyResponseEvent response, String order_status) {
+		// if order-status is cancel then need to invoke cancel order api in locus
+		LOGGER.info("Order created successfully and invoking the cancelOrder to cancel the order");
+		try {
+			APIGatewayProxyResponseEvent invokeCancelOrder = invokeCancelOrder(orderHive,
+					orderhiveLocusConvertorServiceImplObj, order_status, response);
+			LOGGER.info("Order created and canceled successfully based on order status : " + order_status
+					+ " and status" + invokeCancelOrder.getStatusCode().toString());
+		} catch (Exception e) {
+			LOGGER.info("Order creation success and cancelation failed.");
+		}
+	}
+
+	/**
+	 * @param orderHive
+	 * @param orderhiveLocusConvertorServiceImplObj
+	 * @param response
+	 * @param order_status
+	 * @return
+	 */
+	private APIGatewayProxyResponseEvent invokeCancelOrder(OrderHive orderHive,
+			OrderhiveLocusConvertorServiceImpl orderhiveLocusConvertorServiceImplObj, String order_status,
+			APIGatewayProxyResponseEvent response) {
+
+		System.out.println("Inside invoke cancel order");
+
+		String locusRequestBuildResponse = null;
+
 		// Logic for find out order status
-		if (orderHive.getData().getOrder_status().equalsIgnoreCase("cancel")) {
+		if (order_status.equalsIgnoreCase("cancel")) {
 			// CancelOrderImpl cancelOrderImpl = new CancelOrderImpl();
 
-			String orderId =String.valueOf(orderHive.getData().getId());
+			String orderId = String.valueOf(orderHive.getData().getId());
 			try {
 				locusRequestBuildResponse = orderhiveLocusConvertorServiceImplObj
 						.buildLocusCancelOrderRequest(orderHive);
@@ -109,63 +220,8 @@ public class LocusCreateCancelOrder
 				response.setStatusCode(HttpStatus.CONFLICT.value());
 				response.setBody(LocusConstants.ERROR_IN_PROCESSING);
 			}
-			return response;
-
-		} else if (orderHive.getData().getOrder_status().equalsIgnoreCase("confirm")) {
-
-			conversionStartTime = System.currentTimeMillis();
-			// CreateOrderImpl createOrderImpl = new CreateOrderImpl();
-			try {
-				locusRequestBuildResponse = orderhiveLocusConvertorServiceImplObj
-						.buildLocusCreateOrderRequest(orderHive);
-			} catch (Exception e) {
-				LOGGER.error("Failed in conversion: " + e);
-			}
-			conversionEndTime = System.currentTimeMillis();
-			System.out.println(
-					"Total Time in JSON Conversion : " + (conversionStartTime - conversionEndTime) + " millisecond");
-
-			LOGGER.info("locusRequestBuildResponse===>" + locusRequestBuildResponse);
-			if (null != locusRequestBuildResponse) {
-				ResponseEntity<String> locusResponse = getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse);
-				LOGGER.info("Got the response in main method");
-
-				if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
-					LOGGER.info("locusResponse.getStatusCode().value()" + locusResponse.getStatusCode().value() + "\t"
-							+ (HttpStatus.OK.value()));
-					response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.SUCCESS);
-				} else {
-					boolean successFlag = false;
-					for (int count = 2; count < LocusConstants.ORDER_CREATE_COUNT; count++) {
-
-						locusResponse = getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse);
-						if (locusResponse.getStatusCode().equals(HttpStatus.OK))
-							successFlag = true;
-
-						LOGGER.info("Success Flag::" + successFlag);
-
-						if (successFlag == true) {
-							response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.SUCCESS);
-							break;
-						} else {
-							if (count == LocusConstants.COUNT_FINAL) {
-								LOGGER.info("Going to build Final Response after hitting three times:");
-								response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.FAILURE);
-								break;
-							}
-						}
-
-					}
-				}
-			} else {
-				response.setStatusCode(HttpStatus.CONFLICT.value());
-				response.setBody(LocusConstants.ERROR_IN_PROCESSING);
-			}
-		} else {
-			response.setStatusCode(HttpStatus.CONFLICT.value());
-			response.setBody("Invalid Order Status");
 		}
-		System.out.println("Final Response  :" + response);
+
 		return response;
 	}
 
