@@ -6,9 +6,9 @@ public class LocusConstants {
 	public static final String EFFECTIVE_STATUS="PLANNING";
 	public static final int VERSION=1;
 	public static final String STATUS="ACTIVE";
-	public static final int ORDER_CREATE_COUNT=4;
+	public static final int ORDER_CREATE_COUNT=3;
 	public static final int COUNT_FINAL = 3;
-	public static final int ORDER_CANCEL_COUNT = 4;
+	public static final int ORDER_CANCEL_COUNT=3;
 	public static final String SUCCESS = "Success";
 	public static final String FAILURE = "Failure";
 	public static final String QUANTITY_UNIT ="PC"; 

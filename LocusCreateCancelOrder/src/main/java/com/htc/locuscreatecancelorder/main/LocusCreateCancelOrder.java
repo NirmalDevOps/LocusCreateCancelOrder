@@ -69,7 +69,8 @@ public class LocusCreateCancelOrder
 		String order_status = orderHive.getData().getOrder_status();
 		if (order_status.equalsIgnoreCase("confirm") || order_status.equalsIgnoreCase("not_confirm")
 				|| order_status.equalsIgnoreCase("Not Confirm") || order_status.equalsIgnoreCase("confirmed")
-				|| order_status.equalsIgnoreCase("NotConfirmed") || order_status.equalsIgnoreCase("Not Confirmed")) {
+				|| order_status.equalsIgnoreCase("NotConfirmed") || order_status.equalsIgnoreCase("Not Confirmed")
+				|| order_status.equalsIgnoreCase("cancel")) {
 			System.out.println("Inside if : " + order_status);
 
 			// need to create
@@ -87,48 +88,77 @@ public class LocusCreateCancelOrder
 
 			LOGGER.info("locusRequestBuildResponse===>" + locusRequestBuildResponse);
 			if (null != locusRequestBuildResponse) {
-				ResponseEntity<String> locusResponse = getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse);
+				
+				// With Re-try start
+				ResponseEntity<String> locusResponse = null;
+				try {
+					System.out.println("Before Calling getResponseFromLocusAPI");
+					locusResponse = getResponseFromLocusCreateOrderAPIIncorrect(locusRequestBuildResponse);
+					System.out.println("After Calling getResponseFromLocusAPI :: " + locusResponse);
+				} catch (HttpClientErrorException e) {
+					System.out.println("Exception occured in getResponseFromLocusAPI");
+					locusResponse.status(e.getStatusCode().value());
+				}
 				LOGGER.info("Got the response in main method");
-
+				System.out.println("Got the response in main method...");
 				if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
-
+					
 					if (order_status.equalsIgnoreCase("cancel")) {
-						finalInvokeCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj, response,
+						System.out.println("order status is cancel");
+						invokeCreateAndCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj, response,
 								order_status);
-						}
-
-					LOGGER.info("locusResponse.getStatusCode().value()" + locusResponse.getStatusCode().value() + "\t"
-							+ (HttpStatus.OK.value()));
+					}
 					response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.SUCCESS);
 				} else {
-					boolean successFlag = false;
-					for (int count = 2; count < LocusConstants.ORDER_CREATE_COUNT; count++) {
-
-						locusResponse = getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse);
-						if (locusResponse.getStatusCode().equals(HttpStatus.OK))
-							successFlag = true;
-
-						LOGGER.info("Success Flag::" + successFlag);
-
-						if (successFlag == true) {
-							
-							if (order_status.equalsIgnoreCase("cancel")) {
-							finalInvokeCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj, response,
-									order_status);
-							}
-
-							response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.SUCCESS);
-							break;
-						} else {
-							if (count == LocusConstants.COUNT_FINAL) {
-								LOGGER.info("Going to build Final Response after hitting three times:");
-								response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.FAILURE);
-								break;
-							}
-						}
-
-					}
+					System.out.println("inside else going to call retryCreateOrderAPI()");
+					response = retryCreateOrderAPI(locusRequestBuildResponse, 1,orderHive, orderhiveLocusConvertorServiceImplObj, response,order_status);
 				}
+				
+							
+				
+				
+				// end
+				// Without Re-try start
+				/*
+				 * ResponseEntity<String> locusResponse =
+				 * getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse);
+				 * LOGGER.info("Got the response in main method");
+				 * 
+				 * if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
+				 * 
+				 * if (order_status.equalsIgnoreCase("cancel")) {
+				 * System.out.println("order status is cancel");
+				 * invokeCreateAndCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj,
+				 * response, order_status); }
+				 * 
+				 * LOGGER.info("locusResponse.getStatusCode().value()" +
+				 * locusResponse.getStatusCode().value() + "\t" + (HttpStatus.OK.value()));
+				 * response = buildLocusCreateOrderResponse(locusResponse,
+				 * LocusConstants.SUCCESS); } else { boolean successFlag = false; for (int count
+				 * = 1; count < LocusConstants.ORDER_CREATE_COUNT; count++) {
+				 * 
+				 * locusResponse =
+				 * getResponseFromLocusCreateOrderAPI(locusRequestBuildResponse); if
+				 * (locusResponse.getStatusCode().equals(HttpStatus.OK)) successFlag = true;
+				 * 
+				 * LOGGER.info("Success Flag::" + successFlag);
+				 * 
+				 * if (successFlag == true) {
+				 * 
+				 * if (order_status.equalsIgnoreCase("cancel")) {
+				 * System.out.println("order status is cancel");
+				 * invokeCreateAndCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj,
+				 * response, order_status); }
+				 * 
+				 * response = buildLocusCreateOrderResponse(locusResponse,
+				 * LocusConstants.SUCCESS); break; } else { if (count ==
+				 * LocusConstants.COUNT_FINAL) {
+				 * LOGGER.info("Going to build Final Response after hitting three times:");
+				 * response = buildLocusCreateOrderResponse(locusResponse,
+				 * LocusConstants.FAILURE); break; } }
+				 * 
+				 * } }
+				 */
 			} else {
 				response.setStatusCode(HttpStatus.CONFLICT.value());
 				response.setBody(LocusConstants.ERROR_IN_PROCESSING);
@@ -141,13 +171,14 @@ public class LocusCreateCancelOrder
 		return response;
 	}
 
-	/**
-	 * @param orderHive
-	 * @param orderhiveLocusConvertorServiceImplObj
-	 * @param response
-	 * @param order_status
-	 */
-	private void finalInvokeCancelOrder(OrderHive orderHive,
+	/*
+		*//**
+			 * @param orderHive
+			 * @param orderhiveLocusConvertorServiceImplObj
+			 * @param response
+			 * @param order_status
+			 */
+	private void invokeCreateAndCancelOrder(OrderHive orderHive,
 			OrderhiveLocusConvertorServiceImpl orderhiveLocusConvertorServiceImplObj,
 			APIGatewayProxyResponseEvent response, String order_status) {
 		// if order-status is cancel then need to invoke cancel order api in locus
@@ -179,8 +210,7 @@ public class LocusCreateCancelOrder
 
 		// Logic for find out order status
 		if (order_status.equalsIgnoreCase("cancel")) {
-			// CancelOrderImpl cancelOrderImpl = new CancelOrderImpl();
-
+			
 			String orderId = String.valueOf(orderHive.getData().getId());
 			try {
 				locusRequestBuildResponse = orderhiveLocusConvertorServiceImplObj
@@ -188,34 +218,54 @@ public class LocusCreateCancelOrder
 			} catch (Exception e) {
 				LOGGER.error("Conversion error " + locusRequestBuildResponse);
 			}
-
 			if (null != locusRequestBuildResponse) {
-				ResponseEntity<String> locusResponse = getResponseFromLocusCancelOrderAPI(locusRequestBuildResponse);
-				LOGGER.info("Got the response in main method" + locusResponse);
-
+				
+				// cancel order retry
+				
+				ResponseEntity<String> locusResponse = null;
+				try {
+					System.out.println("Before Calling getResponseFromLocusAPI");
+					locusResponse = getResponseFromLocusCancelOrderAPIIncorrect(locusRequestBuildResponse);
+					System.out.println("After Calling getResponseFromLocusAPI :: " + locusResponse);
+				} catch (HttpClientErrorException e) {
+					System.out.println("Exception occured in getResponseFromLocusAPI");
+					locusResponse.status(e.getStatusCode().value());
+				}
+				LOGGER.info("Got the response in main method");
+				System.out.println("Got the response in main method...");
 				if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
+					System.out.println("Inside if...");
 					response = buildLocusCancelOrderResponse(locusResponse, LocusConstants.SUCCESS, orderId);
 				} else {
-					boolean successFlag = false;
-					for (int count = 2; count < LocusConstants.ORDER_CANCEL_COUNT; count++) {
-
-						LOGGER.info("Inside Else:: Count::" + count);
-						locusResponse = getResponseFromLocusCancelOrderAPI(locusRequestBuildResponse);
-						if (locusResponse.getStatusCode().equals(HttpStatus.OK))
-							successFlag = true;
-						if (successFlag == true) {
-							response = buildLocusCancelOrderResponse(locusResponse, LocusConstants.SUCCESS, orderId);
-							break;
-						} else {
-							if (count == LocusConstants.COUNT_FINAL) {
-								LOGGER.info("Going to build Final Response after hitting three times:");
-								response = buildLocusCancelOrderResponse(locusResponse, LocusConstants.FAILURE,
-										orderId);
-								break;
-							}
-						}
-					}
+					System.out.println("inside else going to call retryCancelOrderAPI()");
+					response = retryCancelOrderAPI(locusRequestBuildResponse, 1, orderId);
 				}
+				
+				
+				
+				// end
+				
+				// Without Re-try
+				/*
+				 * ResponseEntity<String> locusResponse =
+				 * getResponseFromLocusCancelOrderAPI(locusRequestBuildResponse);
+				 * LOGGER.info("Got the response in main method" + locusResponse);
+				 * 
+				 * if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
+				 * response = buildLocusCancelOrderResponse(locusResponse,
+				 * LocusConstants.SUCCESS, orderId); } else { boolean successFlag = false; for
+				 * (int count = 1; count < LocusConstants.ORDER_CANCEL_COUNT; count++) {
+				 * 
+				 * LOGGER.info("Inside Else:: Count::" + count); locusResponse =
+				 * getResponseFromLocusCancelOrderAPI(locusRequestBuildResponse); if
+				 * (locusResponse.getStatusCode().equals(HttpStatus.OK)) successFlag = true; if
+				 * (successFlag == true) { response =
+				 * buildLocusCancelOrderResponse(locusResponse, LocusConstants.SUCCESS,
+				 * orderId); break; } else { if (count == LocusConstants.COUNT_FINAL) {
+				 * LOGGER.info("Going to build Final Response after hitting three times:");
+				 * response = buildLocusCancelOrderResponse(locusResponse,
+				 * LocusConstants.FAILURE, orderId); break; } } } }
+				 */
 			} else {
 				response.setStatusCode(HttpStatus.CONFLICT.value());
 				response.setBody(LocusConstants.ERROR_IN_PROCESSING);
@@ -292,13 +342,13 @@ public class LocusCreateCancelOrder
 			HttpHeaders headers = setHeaderContent();
 			RestTemplate restTemplate = new RestTemplate(getClientHttpRequestFactory());
 			HttpEntity<String> entity = new HttpEntity<String>(requestJson.toString(), headers);
-			LOGGER.info("HttpEntity Body As aString::" + entity.getBody().toString());
+			LOGGER.info("HttpEntity Body As aString::" + entity.getBody());
 			LOGGER.info("Going to call Locus API::" + locusUrlBuilder);
 			restTemplate.getInterceptors().add(
 					new BasicAuthorizationInterceptor(LocusConstants.CLIENT_ID, LocusConstants.CLIENT_AUTHENTICATION));
 
-			// send request and parse result
-			locusResponse = restTemplate.exchange(finalLocusURL, HttpMethod.POST, entity, String.class);
+			// send request and parse result locusResponse =
+			restTemplate.exchange(finalLocusURL, HttpMethod.POST, entity, String.class);
 			LOGGER.info("Locus response after invoing method" + locusResponse);
 		} catch (HttpClientErrorException e) {
 			locusResponse = new ResponseEntity<String>(e.getStatusCode());
@@ -406,5 +456,211 @@ public class LocusCreateCancelOrder
 
 		return headers;
 	}
+	
+	
+	// for cancel order retry
+	private ResponseEntity<String> getResponseFromLocusCancelOrderAPIIncorrect(String locusRequestJson) {
+		ResponseEntity<String> locusResponse = null;
+
+		CancelOrder locusRequestModelObj = null;
+		try {
+			locusRequestModelObj = objectMapper.readValue(locusRequestJson, CancelOrder.class);
+			System.out.println("locusRequestModelObj =====>" + locusRequestModelObj);
+		} catch (JsonProcessingException e) {
+			LOGGER.error(LocusConstants.ERROR_MESSAGE  + e.getMessage());
+		}
+		String requestJson = "";
+		try {
+			requestJson = objectMapper.writeValueAsString(locusRequestModelObj);
+		} catch (JsonProcessingException e) {
+			LOGGER.error(LocusConstants.ERROR_MESSAGE  + e);
+		}
+
+		try {
+			StringBuilder locusUrlBuilder = buildCancelOrderURLIncorrect();
+
+			String finalLocusURL = locusUrlBuilder.toString();
+
+			LOGGER.info("finalLocusURL====>" + finalLocusURL);
+			HttpHeaders headers = setHeaderContent();
+			RestTemplate restTemplate = new RestTemplate(getClientHttpRequestFactory());
+			HttpEntity<String> entity = new HttpEntity<String>(requestJson.toString(), headers);
+			LOGGER.info("HttpEntity Body As aString::" + entity.getBody());
+			LOGGER.info("Going to call Locus API::" + locusUrlBuilder);
+			restTemplate.getInterceptors().add(
+					new BasicAuthorizationInterceptor(LocusConstants.CLIENT_ID, LocusConstants.CLIENT_AUTHENTICATION));
+
+			// send request and parse result
+			locusResponse = restTemplate.exchange(finalLocusURL, HttpMethod.POST, entity, String.class);
+			LOGGER.info("Locus response after invoing method" + locusResponse);
+		} catch (HttpClientErrorException e) {
+			locusResponse = new ResponseEntity<String>(e.getStatusCode());
+
+			LOGGER.error("Error occured : " + e.getMessage());
+		}
+		return locusResponse;
+	}
+	
+	/**
+	 * @return
+	 */
+	private StringBuilder buildCancelOrderURLIncorrect() {
+		StringBuilder locusUrlBuilder = new StringBuilder("https://oms.locus-api.com/v1/clients/")
+				.append(LocusConstants.CLIENT_ID).append("/order-status-update");
+		return locusUrlBuilder;
+	}
+	
+	
+	private APIGatewayProxyResponseEvent retryCancelOrderAPI(String locusRequestBody, int retryCount, String orderId) {
+		System.out.println("Inside retryCreateOrderAPI");
+		APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
+		ResponseEntity<String> locusResponse = null;
+		while (retryCount < 4) {
+			LOGGER.info("Retry Count :: " + retryCount);
+			System.out.println("Retry Count here :: " + retryCount);
+			try {
+				locusResponse = getResponseFromLocusCancelOrderAPIIncorrect(locusRequestBody);
+			} catch (HttpClientErrorException e) {
+				System.out.println("Status Code here..." + locusResponse.getStatusCode());
+				locusResponse.status(e.getStatusCode().value());
+			}
+			if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
+				response = buildLocusCancelOrderResponse(locusResponse, LocusConstants.SUCCESS, orderId);
+				break;
+			} else {
+				retryCount++;
+//				retryCreateOrderAPI(locusRequestBody, retryCount);
+				LOGGER.debug("Retry Error response::{}", locusResponse.getBody());
+				if (retryCount == 3) {
+					System.out.println("before calling 3 rd time");
+					locusResponse = getResponseFromLocusCancelOrderAPI(locusRequestBody);
+					System.out.println("After calling 3rd time :: " + locusResponse.getStatusCodeValue());
+					System.out.println("After calling 3rd time getBody() :: " + locusResponse.getBody());
+					response.setStatusCode(locusResponse.getStatusCodeValue());
+					response.setBody("Retried for three time. Please check log");
+				}
+			}
+		}
+		return response;
+	}
+
+	private APIGatewayProxyResponseEvent retryCreateOrderAPI(String locusRequestBody, int retryCount,OrderHive orderHive,
+			OrderhiveLocusConvertorServiceImpl orderhiveLocusConvertorServiceImplObj,
+			APIGatewayProxyResponseEvent response, String order_status) {
+		System.out.println("Inside retryCreateOrderAPI");
+		//APIGatewayProxyResponseEvent response = new APIGatewayProxyResponseEvent();
+		ResponseEntity<String> locusResponse = null;
+		while (retryCount < 4) {
+			LOGGER.info("Retry Count :: " + retryCount);
+			System.out.println("Retry Count here :: " + retryCount);
+			try {
+				locusResponse = getResponseFromLocusCreateOrderAPIIncorrect(locusRequestBody);
+			} catch (HttpClientErrorException e) {
+				System.out.println("Status Code here..." + locusResponse.getStatusCode());
+				locusResponse.status(e.getStatusCode().value());
+			}
+			if (locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
+				// invoking the cancel order link after creating the order
+				if (order_status.equalsIgnoreCase("cancel")) {
+					System.out.println("order status is cancel");
+					invokeCreateAndCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj, response,
+							order_status);
+				}
+				response = buildLocusCreateOrderResponse(locusResponse, LocusConstants.SUCCESS);
+				break;
+			} else {
+				boolean cancelFlag=false;
+				retryCount++;
+//				retryCreateOrderAPI(locusRequestBody, retryCount);
+				LOGGER.debug("Retry Error response::{}", locusResponse.getBody());
+				if (retryCount == 3) {
+					System.out.println("before calling 3 rd time");
+					locusResponse = getResponseFromLocusCreateOrderAPI(locusRequestBody);
+					if(locusResponse.getStatusCode().value() == (HttpStatus.OK.value())) {
+						if (order_status.equalsIgnoreCase("cancel")) {
+							System.out.println("order status is cancel");
+							invokeCreateAndCancelOrder(orderHive, orderhiveLocusConvertorServiceImplObj, response,
+									order_status);
+							cancelFlag=true;
+						}
+					}
+					
+					System.out.println("After calling 3rd time :: " + locusResponse.getStatusCodeValue());
+					System.out.println("After calling 3rd time getBody() :: " + locusResponse.getBody());
+					response.setStatusCode(locusResponse.getStatusCodeValue());
+					if(cancelFlag)
+					response.setBody("Retried for three time. Please check log and order cancelled");
+					else
+						response.setBody("Retried for three time. Please check log and order created");
+				}
+			}
+		}
+		return response;
+	}
+	
+	private ResponseEntity<String> getResponseFromLocusCreateOrderAPIIncorrect(String locusRequestJson) {
+		ResponseEntity<String> locusResponse = null;
+
+		Locus locusEditModelObjectBody = null;
+		try {
+			locusEditModelObjectBody = objectMapper.readValue(locusRequestJson, Locus.class);
+			LOGGER.info("locusEditModelObjectBody :" + locusEditModelObjectBody);
+			System.out.println("locusEditModelObjectBody :" + locusEditModelObjectBody);
+		} catch (JsonProcessingException e) {
+			LOGGER.error("Error: " + e);
+		}
+
+		String requestJson = "";
+		try {
+			requestJson = objectMapper.writeValueAsString(locusEditModelObjectBody);
+			System.out.println("requestJson :" + requestJson);
+		} catch (JsonProcessingException e) {
+			e.printStackTrace();
+		}
+
+		LOGGER.info("Order id:" + locusEditModelObjectBody.getId() + "\t Client Id: "
+				+ locusEditModelObjectBody.getClientId());
+
+		try {
+			StringBuilder locusUrlBuilder = buildCreateOrderURLIncorrect(locusEditModelObjectBody);
+
+			String locusURL = locusUrlBuilder.toString();
+			HttpHeaders headers = setHeaderContent();
+
+			RestTemplate restTemplate = new RestTemplate(getClientHttpRequestFactory());
+
+			// LOGGER.info("Rest Template Obj initialized");
+
+			HttpEntity<String> entity = new HttpEntity<String>(requestJson.toString(), headers);
+
+			// LOGGER.info("HttpEntity Body As aString::" + entity.getBody().toString());
+
+			LOGGER.info("Going to call Locus API::" + locusURL);
+
+			restTemplate.getInterceptors().add(
+					new BasicAuthorizationInterceptor(LocusConstants.CLIENT_ID, LocusConstants.CLIENT_AUTHENTICATION));
+
+			// send request and parse result
+			locusResponse = restTemplate.exchange(locusURL, HttpMethod.PUT, entity, String.class);
+		} catch (HttpClientErrorException e) {
+			locusResponse = new ResponseEntity<String>(e.getStatusCode());
+
+			LOGGER.error("Error occured : " + e.getMessage());
+		}
+		return locusResponse;
+	}
+	/**
+	 * @param locusEditModelObjectBody
+	 * @return
+	 */
+	private StringBuilder buildCreateOrderURLIncorrect(Locus locusEditModelObjectBody) {
+		StringBuilder locusUrlBuilder = new StringBuilder("https://oms.locus-api.com/v1/clients/")
+				.append(locusEditModelObjectBody.getClientId()).append("/order/")
+				.append(locusEditModelObjectBody.getId()).append("?overwrite=true");
+		return locusUrlBuilder;
+	}
+	
+
+
 
 }
